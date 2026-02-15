@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>刮刮樂尾刀獵人-雙重記憶版</title>
+    <style>
+        :root { --primary: #d32f2f; --secondary: #2196F3; --success: #2e7d32; --bg: #f8f9fa; }
+        body { font-family: -apple-system, sans-serif; background: var(--bg); padding: 10px; margin: 0; }
+        .container { max-width: 500px; margin: auto; }
+        .card { background: white; padding: 15px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 15px; }
+        .tab-group { display: flex; gap: 5px; margin-bottom: 15px; }
+        .tab { flex: 1; padding: 10px; text-align: center; background: #ddd; border-radius: 8px; cursor: pointer; font-weight: bold; transition: 0.3s; }
+        .tab.active { background: var(--primary); color: white; }
+        h2 { margin: 0 0 10px 0; font-size: 1.2rem; color: #333; }
+        .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 15px; }
+        .stat-box { background: #f1f3f4; padding: 10px; border-radius: 8px; text-align: center; border: 2px solid transparent; }
+        .label { font-size: 0.8rem; color: #666; display: block; }
+        .value { font-size: 1.1rem; font-weight: bold; color: var(--primary); }
+        .positive { background: #e8f5e9; border-color: var(--success); }
+        .positive .value { color: var(--success); }
+        input { width: 100%; padding: 12px; border: 1px solid #ccc; border-radius: 8px; font-size: 1rem; margin-bottom: 10px; box-sizing: border-box; }
+        .btn { width: 100%; padding: 12px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; margin-bottom: 8px; font-size: 1rem; }
+        .btn-add { background: var(--primary); color: white; }
+        .btn-undo { background: var(--secondary); color: white; }
+        .btn-reset { background: #757575; color: white; margin-top: 10px; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        th, td { padding: 10px 5px; border-bottom: 1px solid #eee; text-align: center; }
+        th { background: #f8f9fa; color: #666; }
+        .timestamp { font-size: 0.75rem; color: #888; display: block; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="card">
+        <div class="tab-group">
+            <div id="tab1000" class="tab active" onclick="switchMode(1000)">1000元版</div>
+            <div id="tab2000" class="tab" onclick="switchMode(2000)">2000元版</div>
+        </div>
+
+        <h2 id="modeTitle">1,200萬大吉利</h2>
+        
+        <div class="stat-grid">
+            <div class="stat-box"><span class="label">剩餘張數</span><span id="remCount" class="value">-</span></div>
+            <div class="stat-box"><span class="label">剩餘估計獎池</span><span id="remPrize" class="value">-</span></div>
+            <div id="evBox" class="stat-box"><span class="label">目前單張價值</span><span id="currentEV" class="value">-</span></div>
+            <div class="stat-box"><span class="label">已刮出獎金</span><span id="scratchedPrize" class="value">-</span></div>
+        </div>
+
+        <input type="number" id="inputPrize" placeholder="輸入獎金 (沒中輸0)" inputmode="numeric">
+        <button class="btn btn-add" onclick="addTicket()">確認記錄</button>
+        <button class="btn btn-undo" onclick="undo()">修正/刪除上一筆</button>
+        <button class="btn btn-reset" onclick="resetCurrentBook()">重置當前面額 (換新本)</button>
+    </div>
+
+    <div class="card">
+        <h2 id="historyTitle">歷史紀錄</h2>
+        <table id="historyTable">
+            <thead>
+                <tr>
+                    <th>序號</th>
+                    <th>獎金 (時間)</th>
+                    <th>累計獎金</th>
+                </tr>
+            </thead>
+            <tbody id="historyBody"></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    const configs = {
+        1000: { title: "1,200萬大吉利", total: 25, prizePool: 18500, price: 1000 },
+        2000: { title: "2,000萬超級紅包", total: 18, prizePool: 26999, price: 2000 }
+    };
+
+    // 獨立存儲各面額的數據
+    let dataStore = {
+        1000: [],
+        2000: []
+    };
+    
+    let currentMode = 1000;
+
+    function switchMode(mode) {
+        currentMode = mode;
+        // 更新 UI 狀態
+        document.getElementById('tab1000').classList.toggle('active', mode === 1000);
+        document.getElementById('tab2000').classList.toggle('active', mode === 2000);
+        document.getElementById('modeTitle').innerText = configs[mode].title;
+        document.getElementById('historyTitle').innerText = configs[mode].title + " 紀錄";
+        updateDisplay();
+    }
+
+    function updateDisplay() {
+        const conf = configs[currentMode];
+        const history = dataStore[currentMode];
+        const scratchedCount = history.length;
+        const remCount = conf.total - scratchedCount;
+        const currentScratchedPrize = history.reduce((sum, item) => sum + item.amt, 0);
+        const remPrize = conf.prizePool - currentScratchedPrize;
+        const ev = remCount > 0 ? Math.round(remPrize / remCount) : 0;
+
+        document.getElementById('remCount').innerText = `${remCount} / ${conf.total}`;
+        document.getElementById('remPrize').innerText = remPrize;
+        document.getElementById('scratchedPrize').innerText = currentScratchedPrize;
+        document.getElementById('currentEV').innerText = ev;
+
+        const evBox = document.getElementById('evBox');
+        if (ev >= conf.price) {
+            evBox.classList.add('positive');
+        } else {
+            evBox.classList.remove('positive');
+        }
+
+        let html = "";
+        for (let i = history.length - 1; i >= 0; i--) {
+            const runningTotal = history.slice(0, i + 1).reduce((sum, item) => sum + item.amt, 0);
+            html += `<tr>
+                <td>${i + 1}</td>
+                <td>
+                    <strong>${history[i].amt}</strong>
+                    <span class="timestamp">${history[i].time}</span>
+                </td>
+                <td>${runningTotal}</td>
+            </tr>`;
+        }
+        document.getElementById('historyBody').innerHTML = html;
+    }
+
+    function addTicket() {
+        const input = document.getElementById('inputPrize');
+        let val = parseInt(input.value);
+        if (isNaN(val)) val = 0;
+        
+        if (dataStore[currentMode].length >= configs[currentMode].total) {
+            alert("當前面額這一本已經刮完囉！");
+            return;
+        }
+
+        const now = new Date();
+        const timeStr = now.getHours().toString().padStart(2, '0') + ":" + 
+                        now.getMinutes().toString().padStart(2, '0') + ":" + 
+                        now.getSeconds().toString().padStart(2, '0');
+
+        dataStore[currentMode].push({ amt: val, time: timeStr });
+        input.value = "";
+        input.focus();
+        updateDisplay();
+    }
+
+    function undo() {
+        if(dataStore[currentMode].length === 0) return;
+        dataStore[currentMode].pop();
+        updateDisplay();
+    }
+
+    function resetCurrentBook() {
+        if (confirm(`確定要清空「${configs[currentMode].title}」的紀錄嗎？`)) {
+            dataStore[currentMode] = [];
+            updateDisplay();
+        }
+    }
+
+    // 初始化顯示
+    updateDisplay();
+</script>
+
+</body>
+</html>
